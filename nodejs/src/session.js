@@ -2,6 +2,10 @@ import expressSession from 'express-session';
 
 const { EXPRESS_SESSION_SECRET, NODE_ENV } = process.env;
 
+/**
+ * Setup the Express Session Middleware
+ * @param {Object} app ExpressJS Application
+ */
 export function initSession(app) {
   // TODO: Not great for production, should use persistent storage...
   const memoryStore = new expressSession.MemoryStore();

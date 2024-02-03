@@ -1,10 +1,19 @@
 import { Strategy, TokenSet } from 'openid-client';
 import passport from 'passport';
-import { client, refreshToken } from './keycloak.js';
+import { client } from './keycloak.js';
 
+/**
+ * Initialize PassportJS
+ * @param {Object} app ExpressJS Application
+ * @param {Object} client Openid Client
+ * @returns {app, passport}
+ */
 export function initPassport(app, client) {
+  // Setup PassportJS and the session
   app.use(passport.authenticate('session'));
 
+  // Setup PassportJS Strategy using OIDC and the Keycloak client
+  // It stores only the tokenSet, the userInfo will be accessed through the tokenSet
   passport.use(
     'oidc',
     new Strategy({ client }, (tokenSet, _userInfo, done) => {
@@ -12,55 +21,71 @@ export function initPassport(app, client) {
     })
   );
 
+  /**
+   * Receives a tokenSet
+   */
   passport.serializeUser(function (token, done) {
-    // console.debug('SERIALIZE', Object.keys(token));
+    console.debug('SERIALIZE');
     done(null, token);
   });
+  /**
+   * Returns an object with the userinfo and token
+   */
   passport.deserializeUser(function (token, done) {
-    // console.debug('DESERIALIZE', Object.keys(token));
+    console.debug('DESERIALIZE');
     done(null, { userinfo: new TokenSet(token).claims(), token });
   });
 
   return { app, passport };
 }
 
+/**
+ * Verify that the user token is valid
+ * @param {Object} req requires the req.user.token
+ * @param {Object} res
+ * @param {Function} next
+ * @returns next() or a redirection to /auth/login
+ */
 export async function isAuthenticated(req, res, next) {
-  console.log(
-    'isAuth',
-    req.isAuthenticated(),
-    !new TokenSet(req.user?.token).expired()
-  );
-  req.isAuthenticated() && !new TokenSet(req.user.token).expired()
-    ? next()
-    : await refresh(req, res, next);
+  try {
+    if (req.user?.token) {
+      const tokenSet = new TokenSet(req.user.token);
+      return (await client.userinfo(tokenSet)) &&
+        req.isAuthenticated() &&
+        !tokenSet.expired()
+        ? next()
+        : await refresh(req, res, next);
+    }
+    return res.redirect('/auth/login');
+  } catch {
+    return await refresh(req, res, next);
+  }
 }
 
+/**
+ * Refresh the user access token using the refresh token
+ * @param {Object} req requires the req.user.token.refresh_token
+ * @param {Object} res
+ * @param {Function} next
+ * @returns next() or sign out the user
+ */
 export async function refresh(req, res, next) {
   try {
-    // console.log('refresh');
     if (req.user) {
-      // console.debug('ACCESS TOKEN IS EXPIRED');
-      const rawTokenSet = await refreshToken(req.user.token.refresh_token);
-      const tokenSet = new TokenSet(rawTokenSet);
-      tokenSet.expires_at = tokenSet.expires_at || tokenSet.claims().exp;
-      // console.log(tokenSet);
-      // console.log('NEW TOKEN SET', tokenSet);
+      const tokenSet = await client.refresh(req.user.token.refresh_token);
       req.session.passport.user = tokenSet;
-
-      // console.log('SESSION', req.session.passport.user);
       return req.session.save(function (err) {
-        // session saved
-        // console.error('SAVING SESSION', err);
+        if (err) {
+          throw new Error('Unable to refresh the token. You must sign in.');
+        }
         req.user.token = req.session.passport.user;
         req.user.userinfo = tokenSet.claims();
-        // console.log('USER', req.user);
         return next();
       });
-    } 
+    }
 
-    throw new Error("Unable to refresh the token. You must sign in.")
-  } catch (e) {
-    console.error(e);
-    return res.redirect(client.endSessionUrl());
+    throw new Error('Unable to refresh the token. You must sign in.');
+  } catch {
+    return req.logout(() => res.redirect('/'));
   }
 }

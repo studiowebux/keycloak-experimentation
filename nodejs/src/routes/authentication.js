@@ -12,7 +12,6 @@ export default function routes(passport) {
   });
 
   router.get('/auth/logout/callback', (req, res) => {
-    console.debug('/auth/logout/callback');
     req.logout(() => res.redirect('/'));
   });
 
