@@ -1,6 +1,6 @@
 import { Strategy, TokenSet } from 'openid-client';
 import passport from 'passport';
-import { client } from './keycloak.js';
+import { client, forceLogout } from './keycloak.js';
 
 /**
  * Initialize PassportJS
@@ -17,6 +17,7 @@ export function initPassport(app, client) {
   passport.use(
     'oidc',
     new Strategy({ client }, (tokenSet, _userInfo, done) => {
+      // console.debug('OIDC', tokenSet, _userInfo);
       return done(null, tokenSet);
     })
   );
@@ -48,16 +49,16 @@ export function initPassport(app, client) {
  */
 export async function isAuthenticated(req, res, next) {
   try {
+    console.debug('isAuthenticated');
     if (req.user?.token) {
       const tokenSet = new TokenSet(req.user.token);
-      return (await client.userinfo(tokenSet)) &&
-        req.isAuthenticated() &&
-        !tokenSet.expired()
-        ? next()
-        : await refresh(req, res, next);
+      const isAuth = await client.userinfo(tokenSet);
+      return isAuth() ? next() : await refresh(req, res, next);
     }
-    return res.redirect('/auth/login');
+    console.debug('nope');
+    return res.redirect('/');
   } catch {
+    console.debug('trying to refresh the access token');
     return await refresh(req, res, next);
   }
 }
@@ -71,7 +72,11 @@ export async function isAuthenticated(req, res, next) {
  */
 export async function refresh(req, res, next) {
   try {
+    console.debug('refresh token');
+    // the user is connected, but might not be valid anymore.
     if (req.user) {
+      // try to get a new tokenSet, but depending on the SSO Session Idle and Max in keycloak
+      // It might be invalid
       const tokenSet = await client.refresh(req.user.token.refresh_token);
       req.session.passport.user = tokenSet;
       return req.session.save(function (err) {
@@ -80,12 +85,26 @@ export async function refresh(req, res, next) {
         }
         req.user.token = req.session.passport.user;
         req.user.userinfo = tokenSet.claims();
+        console.debug('token refreshed');
         return next();
       });
     }
 
     throw new Error('Unable to refresh the token. You must sign in.');
-  } catch {
-    return req.logout(() => res.redirect('/'));
+  } catch (e) {
+    console.error(e.message);
+    console.debug('Unable to refresh');
+    const idToken = req.user.token.id_token;
+    // Logout local session (passportJS session)
+    return req.logout((err) => {
+      console.error('Logout called');
+      if (err) {
+        console.debug('err', err);
+        return next(err);
+      }
+      // Logout browser (Keycloak sign in page)
+      // Not convince that it is the way to go...
+      return forceLogout(res, idToken);
+    });
   }
 }

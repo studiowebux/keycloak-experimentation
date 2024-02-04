@@ -29,6 +29,12 @@ app.use(authenticated);
 app.use(unprotected);
 app.use(kitty);
 
+// Global Error Handling
+app.use((error, req, res, next) => {
+  console.error(error.stack);
+  res.status(500).send(error.message || "I don't know .. sorry");
+});
+
 app.listen(EXPRESS_PORT, EXPRESS_HOSTNAME, () => {
   console.log(`Backend started at ${EXPRESS_HOSTNAME}:${EXPRESS_PORT}`);
 });

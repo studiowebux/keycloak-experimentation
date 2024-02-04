@@ -5,6 +5,7 @@ import { checkGroup, checkPermission } from '../keycloak.js';
 const router = express.Router();
 
 router.get('/profile', isAuthenticated, (req, res) => {
+  console.debug("profile")
   console.log(req.user)
   res.render('pages/profile', {
     profile: req.user.userinfo,

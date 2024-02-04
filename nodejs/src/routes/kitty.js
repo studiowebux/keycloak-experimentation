@@ -25,7 +25,7 @@ router.put(
 router.delete(
   '/api/kitty/:id',
   isAuthenticated,
-  checkPermission('/api/kitty/*#delete,view'),
+  checkPermission('/api/kitty/*#delete'), // this: /api/kitty/*#delete,view act as a OR.
   (req, res, next) => {
     console.log('Kitty adopted !');
     res.send('Kitty 1 adopted !');

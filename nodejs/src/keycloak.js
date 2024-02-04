@@ -45,11 +45,12 @@ client[custom.http_options] = (url, options) => {
  * It supports multiple format:
  * resource uri: `/uri/*` or `/uri/abc` and so on..
  * resource uri + scope: `/uri/*#create,view` or `/uri/abc#view` and so on..
- * @param {String} uri 
+ * @param {String} uri
  * @returns next() or not authorized
  */
 export function checkPermission(uri) {
   return async (req, res, next) => {
+    console.debug('checkPermission');
     try {
       const response = await client.grant({
         grant_type: 'urn:ietf:params:oauth:grant-type:uma-ticket',
@@ -63,14 +64,22 @@ export function checkPermission(uri) {
 
       if (KEYCLOAK_RESPONSE_MODE === 'decision') {
         if (response.result === true) {
+          console.debug('authorized');
           return next();
         }
       } else if (KEYCLOAK_RESPONSE_MODE === 'permissions') {
-        if (!response.error) return next();
+        if (!response.error) {
+          console.debug('authorized');
+          return next();
+        }
       }
 
+      console.debug('not authorized');
+
       return notAuthorized(res, isHtmx(req), req.isAuthenticated());
-    } catch {
+    } catch (e) {
+      console.error(e.message);
+      console.debug('not authorized');
       return notAuthorized(res, isHtmx(req), req.isAuthenticated());
     }
   };
@@ -83,22 +92,38 @@ export function checkPermission(uri) {
  */
 export function checkGroup(group) {
   return async (req, res, next) => {
-    if (req.user.userinfo.groups.includes(group)) return next();
-
+    console.debug('checkGroup');
+    if (req.user.userinfo.groups.includes(group)) {
+      console.debug('authorized');
+      return next();
+    }
+    console.debug('not authorized');
     return notAuthorized(res, isHtmx(req), req.isAuthenticated());
   };
 }
 
 /**
  * Renders a not authorized section or a page
- * @param {object} res 
+ * @param {object} res
  * @param {boolean} htmx for the render function
  * @param {boolean} isAuthenticated for the render function
- * @returns 
+ * @returns
  */
 function notAuthorized(res, htmx = false, isAuthenticated) {
   return res.render(`${htmx ? 'sections' : 'pages'}/not-authorized`, {
     isAuthenticated,
     error_description: 'Not authorized to access the resource'
   });
+}
+
+/**
+ * Force to logout the user session
+ * @param {Object} res
+ * @param {String} idToken The latest id_token to logout the user session, it skips the keycloak UI doing so.
+ * @returns redirect to logout redirect uri, if it is an array, this is not implemented.
+ */
+export function forceLogout(res, idToken) {
+  return res.redirect(
+    `${issuer.metadata.end_session_endpoint}?post_logout_redirect_uri=${encodeURIComponent(KEYCLOAK_LOGOUT_REDIRECT_URIS)}&id_token_hint=${idToken}`
+  );
 }
