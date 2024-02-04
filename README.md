@@ -203,3 +203,19 @@ Error: did not find expected authorization request details in session, req.sessi
 ```
 
 Set the `NODE_ENV="development"` and restart the server. Go to `http://localhost:3000` and it should be back on !
+
+
+---
+
+# Redis
+
+```bash
+docker run --name redis-session -p 6379:6379 -v $(pwd)/tmp/redis:/data -d redis redis-server --save 60 1 --loglevel warning
+```
+
+**List all keys**
+
+
+```bash
+scan 0
+```
